@@ -1,7 +1,7 @@
 import re
 
 class SchemaParser():
-    def __init__():
+    def __init__(self):
         pass
 
     def extract_sql_doc(self, inputfile):
@@ -71,26 +71,31 @@ class SchemaParser():
             next_pos += 1
         return strtype, words[next_pos:]
 
-    def _extract_null(words):
+    def _extract_null(self, words):
         ifnull = None
-        nextpos = 0
         if 'not null' in " ".join([s.lower() for s in words]):
             ifnull = False
-            nextpos = 2
         elif 'null' in " ".join([s.lower() for s in words]):
             ifnull = True
-            nextpos = 1
-        if len(words) > nextpos:
-            return ifnull, words[1:]
-        else:
-            return ifnull, None
+        return ifnull
+
+    def _extract_default(self, words):
+        lower_cased = [w.lower() for w in words]
+        if 'default' in lower_cased:
+            idx = lower_cased.index('default')
+            if len(words) > idx + 1:
+                return words[idx+1]
+        return None
 
     def _parse_items(self, l):
         c = l.split()
         cmds = []
         cmds = {'name': c[0]}
         cmds['type'], cmd_remaining = self._extract_datatype(c[1:])
-        cmds['null'], cmd_remaining = self._extract_null(cmd_remaining)
+        cmds['null'] = self._extract_null(cmd_remaining)
+        default_value = self._extract_default(cmd_remaining)
+        if default_value:
+            cmds['default'] = default_value
         return cmds
 
     def _parse_keys(self, l):
