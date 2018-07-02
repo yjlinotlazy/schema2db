@@ -31,8 +31,9 @@ class SchemaParser():
 
     def parse_create_block(self, sql_str):
         lines = sql_str.split('\n')
-        table = {'columns': [], 'primary_keys': []}
-        table['tablename'] = self._get_table_name(lines[0])
+        table = {'columns': [], 'primary_keys': [],
+                 'tablename':  self._get_table_name(lines[0]),
+                 'operation': 'create'}
         for l in lines[1:]:
             if 'primary key' in l.lower():
                 table['primary_keys'].append(self._parse_keys(l))
@@ -41,7 +42,21 @@ class SchemaParser():
         return table
 
     def parse_alter_block(self, sql_cmds):
-        constraints = ["constraints placeholder"]
+        lines = sql_cmds.split('\n')
+        constraints = {'check': [], 'foreign_keys': [],
+                       'tablename': self._get_table_name(lines[0]),
+                       'operation': 'alter'}
+        for l in lines[1:]:
+            tokens = l.split()
+            if len(tokens) <= 2 or len(tokens[2]) < 3:
+                continue
+            try:
+                if tokens[2][:3].lower() == 'fk_':
+                    constraints['foreign_keys'].append(self._parse_references(l))
+                elif tokens[2][:3].lower() == 'chk':
+                    constraints['check'].append(self._parse_check(l))
+            except:
+                continue
         return constraints
 
     def _clean_doc(self, doc):
@@ -99,5 +114,27 @@ class SchemaParser():
         return cmds
 
     def _parse_keys(self, l):
-        tokens = re.findall("[a-zA-Z]+", l)
+        tokens = re.findall("[a-zA-Z0-9]+", l)
         return [t for t in tokens if t.lower() not in('primary', 'key')]
+
+    def _clean_token(self, s):
+        return re.sub(r'\W+', '', s)
+
+    def _parse_references(self, l):
+        """Extract foreign keys. This piece of code isn't riguous at all
+        TODO: make this method more generalized
+        """
+        tokens = l.split()
+        return {'from': self._clean_token(tokens[-4]),
+                'to': self._clean_token(tokens[-1]),
+                'referenced': tokens[-2]}
+
+    def _parse_check(self, l):
+        tokens = l.split()
+        try:
+            indx = [t.lower() for t in tokens].index('in')
+        except ValueError:
+            raise ValueError("Please check the grammar for CHECK")
+        column = self._clean_token(tokens[indx-1])
+        values = [self._clean_token(t) for t in tokens[indx+1: ]]
+        return {'type': 'enum', 'column': column, 'values': values}
