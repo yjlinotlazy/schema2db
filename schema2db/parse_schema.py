@@ -12,9 +12,14 @@ class SchemaParser():
         with open(inputfile, 'r') as f:
             inputstr = f.read()
         blocks = self._clean_doc(inputstr).split(";\n")
-        components = []
+        components = {'create': {}, 'alter': {}}
         for b in blocks:
-            components.append(self.extract_sql_block(b))
+            ops, extracted = self.extract_sql_block(b)
+            if components[ops].get(extracted.get('tablename')):
+                raise ValueError("Duplicated blocks {} for {}".format(ops,
+                                                                      extracted.get('tablename')))
+            else:
+                components[ops][extracted['tablename']] = extracted
         return components
 
     def extract_sql_block(self, block):
@@ -23,9 +28,9 @@ class SchemaParser():
         """
         operation = block.split()[0].lower()
         if operation == 'create':
-            return self.parse_create_block(block)
+            return 'create', self.parse_create_block(block)
         elif operation == 'alter':
-            return self.parse_alter_block(block)
+            return 'alter', self.parse_alter_block(block)
         else:
             raise NotImplementedError("{} operation not supported".format(operation))
 
@@ -36,7 +41,7 @@ class SchemaParser():
                  'operation': 'create'}
         for l in lines[1:]:
             if 'primary key' in l.lower():
-                table['primary_keys'].append(self._parse_keys(l))
+                table['primary_keys'].extend(self._parse_keys(l))
             elif re.findall("[a-zA-Z]+", l):
                 table['columns'].append(self._parse_items(l))
         return table
@@ -125,8 +130,8 @@ class SchemaParser():
         TODO: make this method more generalized
         """
         tokens = l.split()
-        return {'from': self._clean_token(tokens[-4]),
-                'to': self._clean_token(tokens[-1]),
+        return {'column': self._clean_token(tokens[-4]),
+                'source_column': self._clean_token(tokens[-1]),
                 'referenced': tokens[-2]}
 
     def _parse_check(self, l):
