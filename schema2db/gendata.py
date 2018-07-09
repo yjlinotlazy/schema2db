@@ -1,10 +1,12 @@
 """
 Generate data
 """
+import pandas as pd
+import numpy as np
+import argparse
+import os
 import schema2db.randomdata as rd
 from schema2db.parse_schema import SchemaParser
-import numpy as np
-import pandas as pd
 
 
 class DBGenerator():
@@ -16,10 +18,19 @@ class DBGenerator():
         """Return generated database"""
         return self.db
 
+    def reset_db(self):
+        self.db = {}
+
+    def export_db(self, outpath):
+        for tablename in self.db:
+            self.db[tablename].to_csv(os.path.join(outpath, "{}.csv".format(tablename)),
+                                      index=False)
+
     def gen_db_data(self):
         """Top level method that generates a database that complies with
         the schema
         """
+        self.reset_db()
         create = [p for p in self.schema.get('create')]
         waiting_room = create
 
@@ -117,4 +128,20 @@ class DBGenerator():
 
 
 def main():
-    print("hello")
+    epi = """Usage: schema2dbdata <schema.sql> <output folder>
+    """
+    parser = argparse.ArgumentParser(description='A simple tool to generate data from sql commands',
+                                     epilog=epi)
+    parser.add_argument('schema_file', type=str,
+                        help='path to the schema file')
+    parser.add_argument('destination', type=str,
+                        help='destination folder of the database csv files')
+
+    args = parser.parse_args()
+
+    parser = SchemaParser()
+    parsed = parser.extract_sql_doc(args.schema_file)
+
+    db_gen = DBGenerator(parsed)
+    db_gen.gen_db_data()
+    db_gen.export_db(args.destination)
