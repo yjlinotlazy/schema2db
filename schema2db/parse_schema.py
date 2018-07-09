@@ -37,7 +37,7 @@ class SchemaParser():
     def parse_create_block(self, sql_str):
         lines = sql_str.split('\n')
         table = {'columns': [], 'primary_keys': [],
-                 'tablename':  self._get_table_name(lines[0]),
+                 'tablename': self._get_table_name(lines[0]),
                  'operation': 'create'}
         for l in lines[1:]:
             if 'primary key' in l.lower():
@@ -60,7 +60,7 @@ class SchemaParser():
                     constraints['foreign_keys'].append(self._parse_references(l))
                 elif tokens[2][:3].lower() == 'chk':
                     constraints['check'].append(self._parse_check(l))
-            except:
+            except: # noqa
                 continue
         return constraints
 
@@ -68,9 +68,8 @@ class SchemaParser():
         """clean out extra spaces and comment lines
         """
         lines = doc.split('\n')
-        lines = [" ".join(l.split()) for l in lines if l
-                 and not l.isspace()
-                 and l.split()[0] != '--']
+        lines = [" ".join(l.split()) for l in lines
+                 if l and not l.isspace() and l.split()[0] != '--']
         return '\n'.join(lines)
 
     def _get_table_name(self, line):
@@ -143,5 +142,5 @@ class SchemaParser():
         except ValueError:
             raise ValueError("Please check the grammar for CHECK")
         column = self._clean_token(tokens[indx-1])
-        values = [self._clean_token(t) for t in tokens[indx+1: ]]
+        values = [self._clean_token(t) for t in tokens[indx+1:]]
         return {'type': 'enum', 'column': column, 'values': values}
