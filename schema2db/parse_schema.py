@@ -65,10 +65,12 @@ class SchemaParser():
         return constraints
 
     def _clean_doc(self, doc):
-        """clean out extra spaces
+        """clean out extra spaces and comment lines
         """
         lines = doc.split('\n')
-        lines = [" ".join(l.split()) for l in lines if l and not l.isspace()]
+        lines = [" ".join(l.split()) for l in lines if l
+                 and not l.isspace()
+                 and l.split()[0] != '--']
         return '\n'.join(lines)
 
     def _get_table_name(self, line):

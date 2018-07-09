@@ -13,9 +13,12 @@ def random_int(lower=-10000, upper=10000, signed=True):
 
 
 def random_varchar(length=10):
-    """Random varchar strings"""
+    """Random varchar strings
+    I personally capped string length to 20, no matter what args the user
+    provides
+    """
     return ''.join([random.choice(string.ascii_lowercase + ' ')
-                    for i in range(random.randint(1, int(length)))])
+                    for i in range(random.randint(1, min(length, 20)))])
 
 
 def random_decimal(total_dig=8, right_dig=6, signed=True):
