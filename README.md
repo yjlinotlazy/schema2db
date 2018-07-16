@@ -14,8 +14,14 @@ pip install -e .
 
 # Usage
 
+To use in command line:
 ```bash
 schema2dbdata <input.sql> <outputfolder/>
+```
+
+To use in a python script:
+```python
+
 ```
 
 ## Input file format

@@ -1,17 +1,26 @@
 """
 Generate data
 """
+import os
+import argparse
 import pandas as pd
 import numpy as np
-import argparse
-import os
 import schema2db.randomdata as rd
 from schema2db.parse_schema import SchemaParser
 
 
 class DBGenerator():
     def __init__(self, schema):
-        self.schema = schema
+        """schema can either be a processed schema as dict,
+        or a string pointing to the path of the schema sql file
+        """
+        if isinstance(schema, dict):
+            self.schema = schema
+        elif isinstance(schema, str):
+             parser = SchemaParser()
+             self.schema = parser.extract_sql_doc(schema)
+        else:
+            raise ValueError("Unsupported input type {}".format(type(schema)))
         self.db = {}
 
     def get_db(self):
@@ -26,15 +35,23 @@ class DBGenerator():
             self.db[tablename].to_csv(os.path.join(outpath, "{}.csv".format(tablename)),
                                       index=False)
 
-    def gen_db_data(self):
+    def gen_db_data(self, preload={}):
         """Top level method that generates a database that complies with
         the schema
+        preload: preload some tables from csv files or dataframe
         """
         self.reset_db()
-        create = [p for p in self.schema.get('create')]
+        for p in preload:
+            entry = preload[p]
+            if isinstance(entry, str):
+                self.db[p] = pd.read_csv(entry)
+            elif isinstance(entry, pd.DataFrame):
+                self.db[p] = entry
+            else:
+                raise ValueError("Unknown preloaded data type")
+        processed = [p for p in preload]
+        create = [p for p in self.schema.get('create') if p not in preload]
         waiting_room = create
-
-        processed = []
 
         while waiting_room:
             start_count = len(waiting_room)
@@ -66,7 +83,6 @@ class DBGenerator():
         """Generates a single table"""
         enums = {}
         foreign_keys = {}
-        kwargs = {}
         rows = row_num
         table = None
         for c in constrain_sql.get('check', []):
@@ -81,6 +97,7 @@ class DBGenerator():
             else:
                 foreign_keys[c['column']] = [c]
         for col_sql in create_sql['columns']:
+            kwargs = {}
             name = col_sql['name']
             kwargs['datatype'] = col_sql['type']['type']
             kwargs['args'] = [int(arg) for arg in col_sql['type']['args']]
@@ -126,6 +143,48 @@ class DBGenerator():
             return list(set(datalist))[:min(num_rows, len(set(datalist)))]
         return datalist
 
+    """==============Utilities to turn csv into inserts======"""
+    def sql_value(self, a, type_a='varchar'):
+        if type_a.lower() in ['int', 'decimal']:
+            return str(a)
+        elif type_a.lower() == 'varchar':
+            return "'{}'".format(a)
+        elif type_a.lower() in ['date', 'datetime']:
+            return "'{}'".format(a)
+        return str(a)
+
+    def to_insert(self, tablename, types, x):
+        total_cols = [t for t in types]
+        valid_cols = [c for c in total_cols if x[c]]
+        columns_sql = ','.join([self.sql_value(v) for v in valid_cols])
+        values = ','.join([self.sql_value(x[v], types[v]) for v in valid_cols])
+        statement = 'INSERT INTO {} ({}) VALUES ({})'.format(tablename,
+                                                             columns_sql,
+                                                             values)
+        return statement
+
+    def table_to_inserts(self, df, tablename, col_types, path=None):
+        dff = df.copy()
+        printed = dff.apply(lambda x: self.to_insert(tablename,
+                                                     col_types, x),
+                            axis=1).tolist()
+        if not path:
+            path = tablename + '.sql'
+        with open(path, 'w') as f:
+            for p in printed:
+                f.write(p)
+                f.write('\n')
+
+
+    def db_to_inserts(self, path=''):
+        for tablename in self.db:
+            columns = self.schema['create'][tablename]['columns']
+            types = {i['name']:i['type']['type'] for i in columns}
+            self.table_to_inserts(self.db[tablename],
+                                  tablename,
+                                  types,
+                                  os.path.join(path, tablename + '.sql'))
+
 
 def main():
     epi = """Usage: schema2dbdata <schema.sql> <output folder>
@@ -139,9 +198,6 @@ def main():
 
     args = parser.parse_args()
 
-    parser = SchemaParser()
-    parsed = parser.extract_sql_doc(args.schema_file)
-
-    db_gen = DBGenerator(parsed)
+    db_gen = DBGenerator(args.schema_file)
     db_gen.gen_db_data()
     db_gen.export_db(args.destination)

@@ -1,7 +1,14 @@
 import random
 import string
+import requests
+
+# https://stackoverflow.com/questions/18834636/random-word-generator-python
+
+word_site = "http://svnweb.freebsd.org/csrg/share/dict/words?view=co&content-type=text/plain"
 
 
+response = requests.get(word_site)
+WORDS = response.content.splitlines()
 SUPPORTED_TYPE = ['varchar', 'int', 'decimal', 'date']
 
 
@@ -12,13 +19,21 @@ def random_int(lower=-10000, upper=10000, signed=True):
     return random.randint(lower, upper)
 
 
-def random_varchar(length=10):
+def random_varchar(length=10, superrandom=False):
     """Random varchar strings
     I personally capped string length to 20, no matter what args the user
     provides
+    if superrandom, generate from scratch
+    else sample from a dictionary
     """
-    return ''.join([random.choice(string.ascii_lowercase + ' ')
-                    for i in range(random.randint(1, min(length, 20)))])
+    if superrandom:
+        return ''.join([random.choice(string.ascii_lowercase + ' ')
+                        for i in range(random.randint(1, min(length, 20)))])
+    else:
+        w = ''
+        for i in range(int(length/10)):
+            w += ' ' + str(random.choice(WORDS), 'utf-8')
+        return w[:min(len(w), length)]
 
 
 def random_decimal(total_dig=8, right_dig=6, signed=True):
