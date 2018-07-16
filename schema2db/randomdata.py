@@ -31,7 +31,7 @@ def random_varchar(length=10, superrandom=False):
                         for i in range(random.randint(1, min(length, 20)))])
     else:
         w = ''
-        for i in range(int(length/10)):
+        for i in range(int(length/20) + 1):
             w += ' ' + str(random.choice(WORDS), 'utf-8')
         return w[:min(len(w), length)]
 
