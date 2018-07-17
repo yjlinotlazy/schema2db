@@ -144,7 +144,7 @@ class DBGenerator():
         return datalist
 
     """==============Utilities to turn csv into inserts======"""
-    def sql_value(self, a, type_a='varchar'):
+    def sql_value(self, a, type_a='none'):
         if type_a.lower() in ['int', 'decimal']:
             return str(a)
         elif type_a.lower() == 'varchar':
@@ -173,7 +173,7 @@ class DBGenerator():
         with open(path, 'w') as f:
             for p in printed:
                 f.write(p)
-                f.write('\n')
+                f.write(';\n')
 
 
     def db_to_inserts(self, path=''):

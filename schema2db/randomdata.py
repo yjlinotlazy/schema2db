@@ -1,6 +1,7 @@
 import random
 import string
 import requests
+import re
 
 # https://stackoverflow.com/questions/18834636/random-word-generator-python
 
@@ -9,6 +10,7 @@ word_site = "http://svnweb.freebsd.org/csrg/share/dict/words?view=co&content-typ
 
 response = requests.get(word_site)
 WORDS = response.content.splitlines()
+WORDS = [' '.join(re.findall("[a-zA-Z]+", str(w, 'utf-8'))) for w in WORDS]
 SUPPORTED_TYPE = ['varchar', 'int', 'decimal', 'date']
 
 
@@ -31,8 +33,10 @@ def random_varchar(length=10, superrandom=False):
                         for i in range(random.randint(1, min(length, 20)))])
     else:
         w = ''
-        for i in range(int(length/20) + 1):
-            w += ' ' + str(random.choice(WORDS), 'utf-8')
+        num = int(length/20) + 1
+        num = 2
+        for i in range(num):
+            w += ' ' + random.choice(WORDS)
         return w[:min(len(w), length)]
 
 
