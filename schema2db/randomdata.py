@@ -36,7 +36,8 @@ def random_varchar(length=10, superrandom=False):
         num = int(length/20) + 1
         num = 2
         for i in range(num):
-            w += ' ' + random.choice(WORDS)
+            w += random.choice(WORDS) + ' '
+        w = w.strip()
         return w[:min(len(w), length)]
 
 

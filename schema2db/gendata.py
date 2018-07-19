@@ -10,7 +10,7 @@ from schema2db.parse_schema import SchemaParser
 
 
 class DBGenerator():
-    def __init__(self, schema):
+    def __init__(self, schema, exclusive_list=None, exclude_on=None):
         """schema can either be a processed schema as dict,
         or a string pointing to the path of the schema sql file
         """
@@ -21,6 +21,12 @@ class DBGenerator():
              self.schema = parser.extract_sql_doc(schema)
         else:
             raise ValueError("Unsupported input type {}".format(type(schema)))
+
+        if exclusive_list:
+            if exclude_on:
+                self.parse_exclusive_tables(exclusive_list, exclude_on)
+            else:
+                raise ValueError("You must specify the columns to be mutually exclusive")
         self.db = {}
 
     def get_db(self):
@@ -35,7 +41,7 @@ class DBGenerator():
             self.db[tablename].to_csv(os.path.join(outpath, "{}.csv".format(tablename)),
                                       index=False)
 
-    def gen_db_data(self, preload={}):
+    def gen_db_data(self, preload={}, row_num=100):
         """Top level method that generates a database that complies with
         the schema
         preload: preload some tables from csv files or dataframe
@@ -70,8 +76,12 @@ class DBGenerator():
                         break
                 if valid:
                     table_args = self.schema['create'][cand]
-                    constraints = self.schema.get('alter').get(cand, {})
-                    self.db[cand] = self.gen_table(table_args, constraints)
+                    constraints = self.schema.get('alter', {}).get(cand, {})
+                    exclusive = self.schema.get('exclusive', {}).get(cand, {})
+                    self.db[cand] = self.gen_table(table_args,
+                                                   constraints,
+                                                   exclusive,
+                                                   row_num=row_num)
                     processed.append(cand)
                     end_count -= 1
 
@@ -79,12 +89,13 @@ class DBGenerator():
                 raise ValueError('''There are some circular dependencies in foreign keys.
                 Please double check your constraints''')
 
-    def gen_table(self, create_sql, constrain_sql, row_num=50):
+    def gen_table(self, create_sql, constrain_sql={},
+                  exclusive_sql={}, row_num=50):
         """Generates a single table"""
         enums = {}
         foreign_keys = {}
         rows = row_num
-        table = None
+        tabledata = None
         for c in constrain_sql.get('check', []):
             if c['type'] == 'enum':
                 if c['column'] in enums:
@@ -96,6 +107,9 @@ class DBGenerator():
                 foreign_keys[c['column']].append(c)
             else:
                 foreign_keys[c['column']] = [c]
+
+        exclusive_tables = exclusive_sql.get('tables', [])
+        exclusive_columns = exclusive_sql.get('columns', [])
         for col_sql in create_sql['columns']:
             kwargs = {}
             name = col_sql['name']
@@ -108,28 +122,71 @@ class DBGenerator():
             if enums.get(name):
                 choices = enums.get(name)[0]['values']
                 kwargs['choices'] = choices
-                rows = min(len(choices), rows)
             elif foreign_keys.get(name):
                 d = foreign_keys.get(name)[0]
                 choices = self.db[d['referenced']][d['source_column']].tolist()
                 kwargs['choices'] = choices
-                rows = min(len(choices), rows)
-            rowdata = self.gen_column_data(**kwargs)
-            if table is None:
-                table = pd.DataFrame({name: rowdata})
+            # if this column is subject to exclusion constraints, do something
+            if name in exclusive_columns:
+                excluded_values = []
+                unprocessed = 1
+
+                for table in exclusive_tables:
+                    df = self.db.get(table)
+                    if df is not None:
+                        values = df[name].tolist()
+                        excluded_values.extend(values)
+                    else:
+                        unprocessed += 1
+                if 'choices' in kwargs:
+                    kwargs['choices'] = [c for c in kwargs['choices'] if c not in excluded_values]
+                    if unprocessed > 0:
+                        # if there are unprocessed tables left, they will share the same choice pool
+                        sample_size = int(len(kwargs['choices']) / unprocessed)
+                        kwargs['choices'] = np.random.choice(kwargs['choices'],
+                                                             sample_size,
+                                                             replace=False)
+                else:
+                    kwargs['excluded'] = excluded_values
+
+            column_data = self.gen_column_data(num_rows=rows, **kwargs)
+            if tabledata is None:
+                tabledata = pd.DataFrame({name: column_data})
             else:
-                table[name] = rowdata
-        return table
+                # trim table if the column to be inserted is shorter than
+                # table height
+                if len(column_data) < tabledata.shape[0]:
+                    tabledata = tabledata.head(len(column_data))
+                if len(column_data) > tabledata.shape[0]:
+                    tabledata[name] = column_data[:tabledata.shape[0]]
+                else:
+                    tabledata[name] = column_data
+        return tabledata
 
     @staticmethod
     def gen_column_data(datatype='int', args=None, choices=None,
                         signed=False,
                         primary_key=False, isnull=True,
+                        excluded=[],
                         num_rows=50):
-        if choices:
+        """
+        Parameters
+        ----------
+        excluded: list
+            values that should be excluded from the column
+        """
+
+        if choices is not None:
+            if len(choices) == 0:
+                raise ValueError('No value to choose from!')
+            choices_mod = [c for c in choices if c not in excluded]
             if primary_key:
-                return np.random.choice(choices, num_rows, replace=False)
-            return np.random.choice(choices, num_rows, replace=True)
+                # if primary key, then there can be no more rows than the number
+                # of choices
+                num_rows = min(num_rows, len(choices_mod))
+                selected = np.random.choice(choices_mod, num_rows, replace=False)
+                return selected
+            return np.random.choice(choices_mod, num_rows, replace=True)
         else:
             if primary_key:
                 rows = 2 * num_rows
@@ -140,8 +197,45 @@ class DBGenerator():
         if isnull:
             datalist = [rd.gen_null(x) for x in datalist]
         if primary_key:
-            return list(set(datalist))[:min(num_rows, len(set(datalist)))]
+            # remove spaces if the primary key is of type varchar
+            if datatype == 'varchar':
+                datalist = [''.join(k.split()) for k in datalist]
+            datalist = list(set(datalist))[:min(num_rows, len(set(datalist)))]
+        datalist = [d for d in datalist if d not in excluded]
         return datalist
+
+    def parse_exclusive_tables(self, exclusive_list, exclude_on):
+        """This adds a special dict to guarantee that multiple tables whose foreign
+        keys should be mutually exclusive.
+        Example: in the example below, the aim is that a userid can show up in only
+        one of the two tables, but not both
+        Individual table
+        userid | person_name
+          1    |     anne
+          2    |     peter
+
+        Company table
+        userid | company_name
+          1    |    company1
+          2    |    company2
+
+        suppose the exclusive list is handled properly, instead of above tables, we
+        should have
+        userid | person_name
+          1    |     anne
+
+        userid | company_name
+          2    |    company
+
+        The choice of which rows stay in which table is arbitrary
+        """
+
+        self.schema['exclusive'] = {}
+        if isinstance(exclude_on, str):
+            exclude_on = [exclude_on]
+        for e in exclusive_list:
+            self.schema['exclusive'][e] = {'tables': [ee for ee in exclusive_list if ee != e],
+                                           'columns': exclude_on}
 
     """==============Utilities to turn csv into inserts======"""
     def sql_value(self, a, type_a='none'):
@@ -155,7 +249,7 @@ class DBGenerator():
 
     def to_insert(self, tablename, types, x):
         total_cols = [t for t in types]
-        valid_cols = [c for c in total_cols if x[c]]
+        valid_cols = [c for c in total_cols if x[c] or x[c] == 0]
         columns_sql = ','.join([self.sql_value(v) for v in valid_cols])
         values = ','.join([self.sql_value(x[v], types[v]) for v in valid_cols])
         statement = 'INSERT INTO {} ({}) VALUES ({})'.format(tablename,
@@ -174,7 +268,6 @@ class DBGenerator():
             for p in printed:
                 f.write(p)
                 f.write(';\n')
-
 
     def db_to_inserts(self, path=''):
         for tablename in self.db:

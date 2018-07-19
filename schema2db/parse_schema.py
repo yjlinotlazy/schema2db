@@ -142,5 +142,6 @@ class SchemaParser():
         except ValueError:
             raise ValueError("Please check the grammar for CHECK")
         column = self._clean_token(tokens[indx-1])
-        values = [self._clean_token(t) for t in tokens[indx+1:]]
+        candidate_values = ' '.join(tokens[indx+1:]).split(",")
+        values = [t.rstrip(" )'").lstrip(" )'") for t in candidate_values]
         return {'type': 'enum', 'column': column, 'values': values}
