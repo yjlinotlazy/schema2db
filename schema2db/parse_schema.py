@@ -6,8 +6,13 @@ class SchemaParser():
 
     def extract_sql_doc(self, inputfile):
         """ Extract sql components from the entire document
-        params:
-           inputfile: str, name of the input sql file
+        Parameters
+        ----------
+        inputfile: str
+            name of the input sql file
+        Returns
+        -------
+        Parsed sql components
         """
         with open(inputfile, 'r') as f:
             inputstr = f.read()

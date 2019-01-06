@@ -1,5 +1,5 @@
 """
-Generate data
+Generate data based on database schema written in sql format
 """
 import os
 import argparse
@@ -11,14 +11,18 @@ from schema2db.parse_schema import SchemaParser
 
 class DBGenerator():
     def __init__(self, schema, exclusive_list=None, exclude_on=None):
-        """schema can either be a processed schema as dict,
-        or a string pointing to the path of the schema sql file
+        """
+        Parameters
+        ----------
+        schema : dict or str
+        exclusive_list
+        exclude_on
         """
         if isinstance(schema, dict):
             self.schema = schema
         elif isinstance(schema, str):
-             parser = SchemaParser()
-             self.schema = parser.extract_sql_doc(schema)
+            parser = SchemaParser()
+            self.schema = parser.extract_sql_doc(schema)
         else:
             raise ValueError("Unsupported input type {}".format(type(schema)))
 
@@ -205,8 +209,8 @@ class DBGenerator():
         return datalist
 
     def parse_exclusive_tables(self, exclusive_list, exclude_on):
-        """This adds a special dict to guarantee that multiple tables whose foreign
-        keys should be mutually exclusive.
+        """This adds a special dict to guarantee that multiple tables have foreign
+        keys that are mutually exclusive.
         Example: in the example below, the aim is that a userid can show up in only
         one of the two tables, but not both
         Individual table
@@ -237,8 +241,9 @@ class DBGenerator():
             self.schema['exclusive'][e] = {'tables': [ee for ee in exclusive_list if ee != e],
                                            'columns': exclude_on}
 
-    """==============Utilities to turn csv into inserts======"""
-    def sql_value(self, a, type_a='none'):
+    # ============== Utilities to turn csv into inserts ====== #
+    @staticmethod
+    def sql_value(a, type_a='none'):
         if type_a.lower() in ['int', 'decimal']:
             return str(a)
         elif type_a.lower() == 'varchar':
@@ -247,12 +252,12 @@ class DBGenerator():
             return "'{}'".format(a)
         return str(a)
 
-    def to_insert(self, tablename, types, x):
+    def to_insert(self, table_name, types, x):
         total_cols = [t for t in types]
         valid_cols = [c for c in total_cols if x[c] or x[c] == 0]
         columns_sql = ','.join([self.sql_value(v) for v in valid_cols])
         values = ','.join([self.sql_value(x[v], types[v]) for v in valid_cols])
-        statement = 'INSERT INTO {} ({}) VALUES ({})'.format(tablename,
+        statement = 'INSERT INTO {} ({}) VALUES ({})'.format(table_name,
                                                              columns_sql,
                                                              values)
         return statement
